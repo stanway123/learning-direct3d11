@@ -341,54 +341,11 @@ struct Joint
     XMFLOAT4 orientation;
 };
 
-///////////////**************new**************////////////////////
-struct BoundingBox
-{
-    XMFLOAT3 min;
-    XMFLOAT3 max;
-};
-
-struct FrameData
-{
-    int frameID;
-    std::vector<float> frameData;
-};
-struct AnimJointInfo
-{
-    std::wstring name;
-    int parentID;
-
-    int flags;
-    int startIndex;
-};
-
-struct ModelAnimation
-{
-    int numFrames;
-    int numJoints;
-    int frameRate;
-    int numAnimatedComponents;
-
-    float frameTime;
-    float totalAnimTime;
-    float currAnimTime;
-
-    std::vector<AnimJointInfo> jointInfo;
-    std::vector<BoundingBox> frameBounds;
-    std::vector<Joint>    baseFrameJoints;
-    std::vector<FrameData>    frameData;
-    std::vector<std::vector<Joint>> frameSkeleton;
-};
-///////////////**************new**************////////////////////
-
 struct Weight
 {
     int jointID;
     float bias;
     XMFLOAT3 pos;
-    ///////////////**************new**************////////////////////
-    XMFLOAT3 normal;
-    ///////////////**************new**************////////////////////
 };
 
 struct ModelSubset
@@ -397,7 +354,6 @@ struct ModelSubset
     int numTriangles;
 
     std::vector<Vertex> vertices;
-    std::vector<XMFLOAT3> jointSpaceNormals;
     std::vector<DWORD> indices;
     std::vector<Weight> weights;
 
@@ -414,9 +370,6 @@ struct Model3D
 
     std::vector<Joint> joints;
     std::vector<ModelSubset> subsets;
-    ///////////////**************new**************////////////////////
-    std::vector<ModelAnimation> animations;
-    ///////////////**************new**************////////////////////
 };
 
 XMMATRIX smilesWorld;
@@ -428,9 +381,6 @@ bool LoadMD5Model(std::wstring filename,
     std::vector<ID3D11ShaderResourceView*>& shaderResourceViewArray,
     std::vector<std::wstring> texFileNameArray);
 ///////////////**************new**************////////////////////
-bool LoadMD5Anim(std::wstring filename,    Model3D& MD5Model);
-
-void UpdateMD5Model(Model3D& MD5Model, float deltaTime, int animation);
 //主函数，传入应用程序句柄hInstance,前一个应用程序句柄hPrevInstance，传给函数处理的命令行lpCmdLine以及窗口显示方式的nShowCmd
 int WINAPI WinMain(HINSTANCE hInstance,
 	HINSTANCE hPrevInstance,
@@ -555,7 +505,7 @@ bool InitializeWindow(HINSTANCE hInstance,
 	hwnd = CreateWindowEx(
 		NULL, 
 		WndClassName, 
-		L"model md5anim",
+		L"model md5mesh",
 		WS_OVERLAPPEDWINDOW, 
         CW_USEDEFAULT, CW_USEDEFAULT,
         width, height,
@@ -826,13 +776,6 @@ void DetectInput(double time)
 	{
 		moveBackForward -= speed;
 	}
-    ///////////////**************new**************////////////////////
-    if(keyboardState[DIK_R] & 0X80)
-    {
-        float timeFactor = 1.0f;    // 可通过改变该值来加速或减速时间
-        UpdateMD5Model(NewMD5Model, time*timeFactor, 0);
-    }
-    ///////////////**************new**************////////////////////
 	if((mouseCurrState.lX != mouseLastState.lX) || (mouseCurrState.lY != mouseLastState.lY))
 	{
 		camYaw += mouseLastState.lX * 0.001f;
@@ -879,11 +822,11 @@ void CleanUp()
 	//释放不裁剪对象
 //	noCull->Release();
 	//释放混合对象
-//#if 1
+#if 1
 	Transparency->Release();
 	CCWcullMode->Release();
 	CWcullMode->Release();
-//#endif	
+#endif	
 	//释放线框
 	//WireFrame->Release();
 
@@ -926,388 +869,9 @@ void CleanUp()
         NewMD5Model.subsets[i].indexBuff->Release();
         NewMD5Model.subsets[i].vertBuff->Release();
     }
+    ///////////////**************new**************////////////////////
 }
 
-///////////////**************new**************////////////////////
-bool LoadMD5Anim(std::wstring filename,    Model3D& MD5Model)
-{    
-    ModelAnimation tempAnim;                        // Temp animation to later store in our model's animation array
-
-    std::wifstream fileIn (filename.c_str());        // Open file
-
-    std::wstring checkString;                        // Stores the next string from our file
-
-    if(fileIn)                                        // Check if the file was opened
-    {
-        while(fileIn)                                // Loop until the end of the file is reached
-        {    
-            fileIn >> checkString;                    // Get next string from file
-
-            if ( checkString == L"MD5Version" )        // Get MD5 version (this function supports version 10)
-            {
-                fileIn >> checkString;
-                /*MessageBox(0, checkString.c_str(),    //display message
-                L"MD5Version", MB_OK);*/
-            }
-            else if ( checkString == L"commandline" )
-            {
-                std::getline(fileIn, checkString);    // Ignore the rest of this line
-            }
-            else if ( checkString == L"numFrames" )
-            {
-                fileIn >> tempAnim.numFrames;                // Store number of frames in this animation
-            }
-            else if ( checkString == L"numJoints" )
-            {
-                fileIn >> tempAnim.numJoints;                // Store number of joints (must match .md5mesh)
-            }
-            else if ( checkString == L"frameRate" )
-            {
-                fileIn >> tempAnim.frameRate;                // Store animation's frame rate (frames per second)
-            }
-            else if ( checkString == L"numAnimatedComponents" )
-            {
-                fileIn >> tempAnim.numAnimatedComponents;    // Number of components in each frame section
-            }
-            else if ( checkString == L"hierarchy" )
-            {
-                fileIn >> checkString;                // Skip opening bracket "{"
-
-                for(int i = 0; i < tempAnim.numJoints; i++)    // Load in each joint
-                {
-                    AnimJointInfo tempJoint;
-
-                    fileIn >> tempJoint.name;        // Get joints name
-                    // Sometimes the names might contain spaces. If that is the case, we need to continue
-                    // to read the name until we get to the closing " (quotation marks)
-                    if(tempJoint.name[tempJoint.name.size()-1] != '"')
-                    {
-                        wchar_t checkChar;
-                        bool jointNameFound = false;
-                        while(!jointNameFound)
-                        {
-                            checkChar = fileIn.get();
-
-                            if(checkChar == '"')
-                                jointNameFound = true;        
-
-                            tempJoint.name += checkChar;                                                            
-                        }
-                    }
-
-                    // Remove the quotation marks from joints name
-                    tempJoint.name.erase(0, 1);
-                    tempJoint.name.erase(tempJoint.name.size()-1, 1);
-
-                    fileIn >> tempJoint.parentID;            // Get joints parent ID
-                    fileIn >> tempJoint.flags;                // Get flags
-                    fileIn >> tempJoint.startIndex;            // Get joints start index
-
-                    // Make sure the joint exists in the model, and the parent ID's match up
-                    // because the bind pose (md5mesh) joint hierarchy and the animations (md5anim)
-                    // joint hierarchy must match up
-                    bool jointMatchFound = false;
-                    for(int k = 0; k < MD5Model.numJoints; k++)
-                    {
-                        if(MD5Model.joints[k].name == tempJoint.name)
-                        {
-                            if(MD5Model.joints[k].parentID == tempJoint.parentID)
-                            {
-                                jointMatchFound = true;
-                                tempAnim.jointInfo.push_back(tempJoint);
-                            }
-                        }
-                    }
-                    if(!jointMatchFound)                    // If the skeleton system does not match up, return false
-                        return false;                        // You might want to add an error message here
-
-                    std::getline(fileIn, checkString);        // Skip rest of this line
-                }
-            }
-            else if ( checkString == L"bounds" )            // Load in the AABB for each animation
-            {
-                fileIn >> checkString;                        // Skip opening bracket "{"
-
-                for(int i = 0; i < tempAnim.numFrames; i++)
-                {
-                    BoundingBox tempBB;
-
-                    fileIn >> checkString;                    // Skip "("
-                    fileIn >> tempBB.min.x >> tempBB.min.z >> tempBB.min.y;
-                    fileIn >> checkString >> checkString;    // Skip ") ("
-                    fileIn >> tempBB.max.x >> tempBB.max.z >> tempBB.max.y;
-                    fileIn >> checkString;                    // Skip ")"
-
-                    tempAnim.frameBounds.push_back(tempBB);
-                }
-            }            
-            else if ( checkString == L"baseframe" )            // This is the default position for the animation
-            {                                                // All frames will build their skeletons off this
-                fileIn >> checkString;                        // Skip opening bracket "{"
-
-                for(int i = 0; i < tempAnim.numJoints; i++)
-                {
-                    Joint tempBFJ;
-
-                    fileIn >> checkString;                        // Skip "("
-                    fileIn >> tempBFJ.pos.x >> tempBFJ.pos.z >> tempBFJ.pos.y;
-                    fileIn >> checkString >> checkString;        // Skip ") ("
-                    fileIn >> tempBFJ.orientation.x >> tempBFJ.orientation.z >> tempBFJ.orientation.y;
-                    fileIn >> checkString;                        // Skip ")"
-
-                    tempAnim.baseFrameJoints.push_back(tempBFJ);
-                }
-            }
-            else if ( checkString == L"frame" )        // Load in each frames skeleton (the parts of each joint that changed from the base frame)
-            {
-                FrameData tempFrame;
-
-                fileIn >> tempFrame.frameID;        // Get the frame ID
-
-                fileIn >> checkString;                // Skip opening bracket "{"
-
-                for(int i = 0; i < tempAnim.numAnimatedComponents; i++)
-                {
-                    float tempData;
-                    fileIn >> tempData;                // Get the data
-
-                    tempFrame.frameData.push_back(tempData);
-                }
-
-                tempAnim.frameData.push_back(tempFrame);
-
-                ///*** build the frame skeleton ***///
-                std::vector<Joint> tempSkeleton;
-
-                for(int i = 0; i < tempAnim.jointInfo.size(); i++)
-                {
-                    int k = 0;                        // Keep track of position in frameData array
-
-                    // Start the frames joint with the base frame's joint
-                    Joint tempFrameJoint = tempAnim.baseFrameJoints[i];
-
-                    tempFrameJoint.parentID = tempAnim.jointInfo[i].parentID;
-
-                    // Notice how I have been flipping y and z. this is because some modeling programs such as
-                    // 3ds max (which is what I use) use a right handed coordinate system. Because of this, we
-                    // need to flip the y and z axes. If your having problems loading some models, it's possible
-                    // the model was created in a left hand coordinate system. in that case, just reflip all the
-                    // y and z axes in our md5 mesh and anim loader.
-                    if(tempAnim.jointInfo[i].flags & 1)        // pos.x    ( 000001 )
-                        tempFrameJoint.pos.x = tempFrame.frameData[tempAnim.jointInfo[i].startIndex + k++];
-
-                    if(tempAnim.jointInfo[i].flags & 2)        // pos.y    ( 000010 )
-                        tempFrameJoint.pos.z = tempFrame.frameData[tempAnim.jointInfo[i].startIndex + k++];
-
-                    if(tempAnim.jointInfo[i].flags & 4)        // pos.z    ( 000100 )
-                        tempFrameJoint.pos.y = tempFrame.frameData[tempAnim.jointInfo[i].startIndex + k++];
-
-                    if(tempAnim.jointInfo[i].flags & 8)        // orientation.x    ( 001000 )
-                        tempFrameJoint.orientation.x = tempFrame.frameData[tempAnim.jointInfo[i].startIndex + k++];
-
-                    if(tempAnim.jointInfo[i].flags & 16)    // orientation.y    ( 010000 )
-                        tempFrameJoint.orientation.z = tempFrame.frameData[tempAnim.jointInfo[i].startIndex + k++];
-
-                    if(tempAnim.jointInfo[i].flags & 32)    // orientation.z    ( 100000 )
-                        tempFrameJoint.orientation.y = tempFrame.frameData[tempAnim.jointInfo[i].startIndex + k++];
-
-
-                    // Compute the quaternions w
-                    float t = 1.0f - ( tempFrameJoint.orientation.x * tempFrameJoint.orientation.x )
-                        - ( tempFrameJoint.orientation.y * tempFrameJoint.orientation.y )
-                        - ( tempFrameJoint.orientation.z * tempFrameJoint.orientation.z );
-                    if ( t < 0.0f )
-                    {
-                        tempFrameJoint.orientation.w = 0.0f;
-                    }
-                    else
-                    {
-                        tempFrameJoint.orientation.w = -sqrtf(t);
-                    }
-
-                    // Now, if the upper arm of your skeleton moves, you need to also move the lower part of your arm, and then the hands, and then finally the fingers (possibly weapon or tool too)
-                    // This is where joint hierarchy comes in. We start at the top of the hierarchy, and move down to each joints child, rotating and translating them based on their parents rotation
-                    // and translation. We can assume that by the time we get to the child, the parent has already been rotated and transformed based of it's parent. We can assume this because
-                    // the child should never come before the parent in the files we loaded in.
-                    if(tempFrameJoint.parentID >= 0)
-                    {
-                        Joint parentJoint = tempSkeleton[tempFrameJoint.parentID];
-
-                        // Turn the XMFLOAT3 and 4's into vectors for easier computation
-                        XMVECTOR parentJointOrientation = XMVectorSet(parentJoint.orientation.x, parentJoint.orientation.y, parentJoint.orientation.z, parentJoint.orientation.w);
-                        XMVECTOR tempJointPos = XMVectorSet(tempFrameJoint.pos.x, tempFrameJoint.pos.y, tempFrameJoint.pos.z, 0.0f);
-                        XMVECTOR parentOrientationConjugate = XMVectorSet(-parentJoint.orientation.x, -parentJoint.orientation.y, -parentJoint.orientation.z, parentJoint.orientation.w);
-
-                        // Calculate current joints position relative to its parents position
-                        XMFLOAT3 rotatedPos;
-                        XMStoreFloat3(&rotatedPos, XMQuaternionMultiply(XMQuaternionMultiply(parentJointOrientation, tempJointPos), parentOrientationConjugate));
-
-                        // Translate the joint to model space by adding the parent joint's pos to it
-                        tempFrameJoint.pos.x = rotatedPos.x + parentJoint.pos.x;
-                        tempFrameJoint.pos.y = rotatedPos.y + parentJoint.pos.y;
-                        tempFrameJoint.pos.z = rotatedPos.z + parentJoint.pos.z;
-
-                        // Currently the joint is oriented in its parent joints space, we now need to orient it in
-                        // model space by multiplying the two orientations together (parentOrientation * childOrientation) <- In that order
-                        XMVECTOR tempJointOrient = XMVectorSet(tempFrameJoint.orientation.x, tempFrameJoint.orientation.y, tempFrameJoint.orientation.z, tempFrameJoint.orientation.w);
-                        tempJointOrient = XMQuaternionMultiply(parentJointOrientation, tempJointOrient);
-
-                        // Normalize the orienation quaternion
-                        tempJointOrient = XMQuaternionNormalize(tempJointOrient);
-
-                        XMStoreFloat4(&tempFrameJoint.orientation, tempJointOrient);
-                    }
-
-                    // Store the joint into our temporary frame skeleton
-                    tempSkeleton.push_back(tempFrameJoint);
-                }
-
-                // Push back our newly created frame skeleton into the animation's frameSkeleton array
-                tempAnim.frameSkeleton.push_back(tempSkeleton);
-
-                fileIn >> checkString;                // Skip closing bracket "}"
-            }
-        }
-
-        // Calculate and store some usefull animation data
-        tempAnim.frameTime = 1.0f / tempAnim.frameRate;                        // Set the time per frame
-        tempAnim.totalAnimTime = tempAnim.numFrames * tempAnim.frameTime;    // Set the total time the animation takes
-        tempAnim.currAnimTime = 0.0f;                                        // Set the current time to zero
-
-        MD5Model.animations.push_back(tempAnim);                            // Push back the animation into our model object
-    }
-    else    // If the file was not loaded
-    {
-        SwapChain->SetFullscreenState(false, NULL);    // Make sure we are out of fullscreen
-
-        // create message
-        std::wstring message = L"Could not open: ";
-        message += filename;
-
-        MessageBox(0, message.c_str(),                // display message
-            L"Error", MB_OK);
-
-        return false;
-    }
-    return true;
-}
-
-void UpdateMD5Model(Model3D& MD5Model, float deltaTime, int animation)
-{
-    MD5Model.animations[animation].currAnimTime += deltaTime;            // 更新当前动画时间
-
-    if(MD5Model.animations[animation].currAnimTime > MD5Model.animations[animation].totalAnimTime)
-        MD5Model.animations[animation].currAnimTime = 0.0f;
-
-    // 当前所在帧
-    float currentFrame = MD5Model.animations[animation].currAnimTime * MD5Model.animations[animation].frameRate;    
-    int frame0 = floorf( currentFrame );
-    int frame1 = frame0 + 1;
-
-    // 确保不会超过帧的数量
-    if(frame0 == MD5Model.animations[animation].numFrames-1)
-        frame1 = 0;
-
-    float interpolation = currentFrame - frame0;    // 获取frame0与frame1之间的余数作为插值因子
-
-    std::vector<Joint> interpolatedSkeleton;        // 创建一个帧骨骼来存储插值的骨骼
-
-    // 计算插值骨骼
-    for( int i = 0; i < MD5Model.animations[animation].numJoints; i++)
-    {
-        Joint tempJoint;
-        Joint joint0 = MD5Model.animations[animation].frameSkeleton[frame0][i];        // 获取frame0的骨骼的第i个关节
-        Joint joint1 = MD5Model.animations[animation].frameSkeleton[frame1][i];        // 获取frame1的骨骼的第i个关节
-
-        tempJoint.parentID = joint0.parentID;                                            // 设置tempJoint的父节点id
-
-        // 将两个四元素转换进XMVECTOR
-        XMVECTOR joint0Orient = XMVectorSet(joint0.orientation.x, joint0.orientation.y, joint0.orientation.z, joint0.orientation.w);
-        XMVECTOR joint1Orient = XMVectorSet(joint1.orientation.x, joint1.orientation.y, joint1.orientation.z, joint1.orientation.w);
-
-        // 插值位置
-        tempJoint.pos.x = joint0.pos.x + (interpolation * (joint1.pos.x - joint0.pos.x));
-        tempJoint.pos.y = joint0.pos.y + (interpolation * (joint1.pos.y - joint0.pos.y));
-        tempJoint.pos.z = joint0.pos.z + (interpolation * (joint1.pos.z - joint0.pos.z));
-
-        // 使用球面线性插值(Slerp)插值方向
-        XMStoreFloat4(&tempJoint.orientation, XMQuaternionSlerp(joint0Orient, joint1Orient, interpolation));
-
-        interpolatedSkeleton.push_back(tempJoint);        // 将关节push进插值的骨骼
-    }
-
-    for ( int k = 0; k < MD5Model.numSubsets; k++)
-    {
-        for ( int i = 0; i < MD5Model.subsets[k].vertices.size(); ++i )
-        {
-            Vertex tempVert = MD5Model.subsets[k].vertices[i];
-            tempVert.pos = XMFLOAT3(0, 0, 0);    // 首先确保顶点的位置被清除
-            tempVert.normal = XMFLOAT3(0,0,0);    // 清除顶点法线
-
-            // 总结关节和权重信息以获得顶点的位置和法线
-            for ( int j = 0; j < tempVert.WeightCount; ++j )
-            {
-                Weight tempWeight = MD5Model.subsets[k].weights[tempVert.StartWeight + j];
-                Joint tempJoint = interpolatedSkeleton[tempWeight.jointID];
-
-                // 将关节方向和权重位置转换到向量
-                XMVECTOR tempJointOrientation = XMVectorSet(tempJoint.orientation.x, tempJoint.orientation.y, tempJoint.orientation.z, tempJoint.orientation.w);
-                XMVECTOR tempWeightPos = XMVectorSet(tempWeight.pos.x, tempWeight.pos.y, tempWeight.pos.z, 0.0f);
-
-                // 对关节方向四元数求反
-                XMVECTOR tempJointOrientationConjugate = XMQuaternionInverse(tempJointOrientation);
-
-                // 使用关节方向四元数和它的四元素的反数为该权重计算顶点位置(在关节空间，比如，绕着原点旋转)
-                // 可使用方程rotatedPoint = quaternion * point * quaternionConjugate来旋转一个点
-                XMFLOAT3 rotatedPoint;
-                XMStoreFloat3(&rotatedPoint, XMQuaternionMultiply(XMQuaternionMultiply(tempJointOrientation, tempWeightPos), tempJointOrientationConjugate));
-
-                //将顶点位置从关节空间（0,0,0）位置移动到世界空间的关节位置,要考虑权重偏差
-                tempVert.pos.x += ( tempJoint.pos.x + rotatedPoint.x ) * tempWeight.bias;
-                tempVert.pos.y += ( tempJoint.pos.y + rotatedPoint.y ) * tempWeight.bias;
-                tempVert.pos.z += ( tempJoint.pos.z + rotatedPoint.z ) * tempWeight.bias;
-
-                // 根据前面的权重法线为该帧骨骼计算法线
-                // 可使用计算顶点位置一样的方法来计算法线，只是不必转换它们(仅仅旋转即可)
-                XMVECTOR tempWeightNormal = XMVectorSet(tempWeight.normal.x, tempWeight.normal.y, tempWeight.normal.z, 0.0f);
-
-                // 旋转法线
-                XMStoreFloat3(&rotatedPoint, XMQuaternionMultiply(XMQuaternionMultiply(tempJointOrientation, tempWeightNormal), tempJointOrientationConjugate));
-
-                // 添加到顶点法线并考虑权重偏差
-                tempVert.normal.x -= rotatedPoint.x * tempWeight.bias;
-                tempVert.normal.y -= rotatedPoint.y * tempWeight.bias;
-                tempVert.normal.z -= rotatedPoint.z * tempWeight.bias;
-            }
-
-            MD5Model.subsets[k].positions[i] = tempVert.pos;                // 将顶点位置存储进位置向量而不是直接存储到顶点向量
-            MD5Model.subsets[k].vertices[i].normal = tempVert.normal;        // 存储顶点法线
-            XMStoreFloat3(&MD5Model.subsets[k].vertices[i].normal, XMVector3Normalize(XMLoadFloat3(&MD5Model.subsets[k].vertices[i].normal)));
-        }
-
-        // 将位置放入该子集的顶点中去
-        for(int i = 0; i < MD5Model.subsets[k].vertices.size(); i++)
-        {
-            MD5Model.subsets[k].vertices[i].pos = MD5Model.subsets[k].positions[i];
-        }
-
-        // 更新子集顶点缓冲
-        // 先锁定缓冲
-        D3D11_MAPPED_SUBRESOURCE mappedVertBuff;
-        hr = d3d11DevCon->Map(MD5Model.subsets[k].vertBuff, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedVertBuff);
-
-        // 将数据拷贝到顶点缓冲中去
-        memcpy(mappedVertBuff.pData, &MD5Model.subsets[k].vertices[0], (sizeof(Vertex) * MD5Model.subsets[k].vertices.size()));
-
-        d3d11DevCon->Unmap(MD5Model.subsets[k].vertBuff, 0);
-
-        // 下面这行时另外一种更新缓冲的方式.当想要更新一个每帧少一次的缓冲时会使用该方法，
-        // 由于GPU读取会更快(由DEFAULT创建的缓冲而不是DYNAMIC创建的
-        // ),但是CPU写入会更慢，可尝试两种都使用找出哪一个更快
-        // 若要使用下面这行,则必须创建一个带D3D11_USAGE_DEFAULT的缓冲而不是D3D11_USAGE_DYNAMIC的缓冲
-        //d3d11DevCon->UpdateSubresource( MD5Model.subsets[k].vertBuff, 0, NULL, &MD5Model.subsets[k].vertices[0], 0, 0 );
-    }
-}
 ///////////////**************new**************////////////////////
 bool LoadMD5Model(std::wstring filename,
     Model3D& MD5Model,
@@ -1680,23 +1244,6 @@ bool LoadMD5Model(std::wstring filename,
                     subset.vertices[i].normal.y = -XMVectorGetY(normalSum);
                     subset.vertices[i].normal.z = -XMVectorGetZ(normalSum);
 
- ///////////////**************new**************////////////////////
-                    // 为了更容易计算法线在动画中创建关节空间法线
-                    Vertex tempVert = subset.vertices[i];                        // 获取当前顶点
-                    subset.jointSpaceNormals.push_back(XMFLOAT3(0,0,0));        // push回一个空白法线
-                    XMVECTOR normal = XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);        // 清除法线
-
-                    for ( int k = 0; k < tempVert.WeightCount; k++)                // 遍历每一个顶点权重
-                    {
-                        Joint tempJoint = MD5Model.joints[subset.weights[tempVert.StartWeight + k].jointID];    // 获取关节方向
-                        XMVECTOR jointOrientation = XMVectorSet(tempJoint.orientation.x, tempJoint.orientation.y, tempJoint.orientation.z, tempJoint.orientation.w);
-
-                        // 基于关节方向计算法线(转换进关节空间)
-                        normal = XMQuaternionMultiply(XMQuaternionMultiply(XMQuaternionInverse(jointOrientation), normalSum), jointOrientation);        
-
-                        XMStoreFloat3(&subset.weights[tempVert.StartWeight + k].normal, XMVector3Normalize(normal));            // 将规范四元素存储进权重法线
-                    }                
-                    ///////////////**************new**************////////////////////
                     //为下一个向量清除normalSum,faceUsing
                     normalSum = XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);
                     facesUsing = 0;
@@ -1767,8 +1314,8 @@ bool LoadObjModel(std::wstring filename,
 {
 	HRESULT hr = 0;
 
-	std::wifstream fileIn (filename.c_str());	//打开文件
-	std::wstring meshMatLib;					//保存obj材质库文件名的字符串
+	std::wifstream fileIn (filename.c_str());	//Open file
+	std::wstring meshMatLib;					//String to hold our obj material library filename
 
 	//存储我们模型的信息的数组
 	std::vector<DWORD> indices;
@@ -1792,10 +1339,10 @@ bool LoadObjModel(std::wstring filename,
 	int vertNormIndexTemp;
 	int vertTCIndexTemp;
 
-	wchar_t checkChar;		//每次从文件读出一个字符要存储的地方
-	std::wstring face;		//保存包含面顶点的字符串
-	int vIndex = 0;			//跟踪顶点索引数
-	int triangleCount = 0;	//所有三角形
+	wchar_t checkChar;		//The variable we will use to store one char from file at a time
+	std::wstring face;		//Holds the string containing our face vertices
+	int vIndex = 0;			//Keep track of our vertex index count
+	int triangleCount = 0;	//Total Triangles
 	int totalVerts = 0;
 	int meshTriangles = 0;
 
@@ -1804,7 +1351,7 @@ bool LoadObjModel(std::wstring filename,
 	{
 		while(fileIn)
 		{			
-			checkChar = fileIn.get();	//获取下一个字符
+			checkChar = fileIn.get();	//Get next char
 
 			switch (checkChar)
 			{		
@@ -1815,75 +1362,75 @@ bool LoadObjModel(std::wstring filename,
 				break;
 			case 'v':	//获取向量描述符
 				checkChar = fileIn.get();
-				if(checkChar == ' ')	//v - 向量位置
+				if(checkChar == ' ')	//v - vert position
 				{
 					float vz, vy, vx;
-					fileIn >> vx >> vy >> vz;	//存储接下来三个类型
+					fileIn >> vx >> vy >> vz;	//Store the next three types
 
-					if(isRHCoordSys)	//若模型来自右手坐标系
-						vertPos.push_back(XMFLOAT3( vx, vy, vz * -1.0f));	//转换Z轴
+					if(isRHCoordSys)	//If model is from an RH Coord System
+						vertPos.push_back(XMFLOAT3( vx, vy, vz * -1.0f));	//Invert the Z axis
 					else
 						vertPos.push_back(XMFLOAT3( vx, vy, vz));
 				}
-				if(checkChar == 't')	//vt - 顶点纹理坐标
+				if(checkChar == 't')	//vt - vert tex coords
 				{			
 					float vtcu, vtcv;
-					fileIn >> vtcu >> vtcv;		//保存接下来的两个类型
+					fileIn >> vtcu >> vtcv;		//Store next two types
 
-					if(isRHCoordSys)	//若模型来自右手坐标系
-						vertTexCoord.push_back(XMFLOAT2(vtcu, 1.0f-vtcv));	//将v轴翻转
+					if(isRHCoordSys)	//If model is from an RH Coord System
+						vertTexCoord.push_back(XMFLOAT2(vtcu, 1.0f-vtcv));	//Reverse the "v" axis
 					else
 						vertTexCoord.push_back(XMFLOAT2(vtcu, vtcv));	
 
-					hasTexCoord = true;	//模型使用纹理坐标系
+					hasTexCoord = true;	//We know the model uses texture coords
 				}
 				//由于我们在后来计算法线，我们不必在此检测法线
 				//In the file, but i'll do it here anyway
-				if(checkChar == 'n')	//vn - 顶点法线
+				if(checkChar == 'n')	//vn - vert normal
 				{
 					float vnx, vny, vnz;
-					fileIn >> vnx >> vny >> vnz;	//存储接下来三个类型
+					fileIn >> vnx >> vny >> vnz;	//Store next three types
 
-					if(isRHCoordSys)	//若模型来自右手坐标系
-						vertNorm.push_back(XMFLOAT3( vnx, vny, vnz * -1.0f ));	//将z轴翻转
+					if(isRHCoordSys)	//If model is from an RH Coord System
+						vertNorm.push_back(XMFLOAT3( vnx, vny, vnz * -1.0f ));	//Invert the Z axis
 					else
 						vertNorm.push_back(XMFLOAT3( vnx, vny, vnz ));	
 
-					hasNorm = true;	//模型定义法线
+					hasNorm = true;	//We know the model defines normals
 				}
 				break;
 
 				//新组（子集）
-			case 'g':	//g - 定义一个组
+			case 'g':	//g - defines a group
 				checkChar = fileIn.get();
 				if(checkChar == ' ')
 				{
-					subsetIndexStart.push_back(vIndex);		//子集起始索引
+					subsetIndexStart.push_back(vIndex);		//Start index for this subset
 					subsetCount++;
 				}
 				break;
 
 				//获取面索引
-			case 'f':	//f - 定义面
+			case 'f':	//f - defines the faces
 				checkChar = fileIn.get();
 				if(checkChar == ' ')
 				{
 					face = L"";
-					std::wstring VertDef;	//一个时刻存储一个顶点定义
+					std::wstring VertDef;	//Holds one vertex definition at a time
 					triangleCount = 0;
 
 					checkChar = fileIn.get();
 					while(checkChar != '\n')
 					{
-						face += checkChar;			//将字符添加到面字符串
-						checkChar = fileIn.get();	//获取下一个字符
-						if(checkChar == ' ')		//若为空格
-							triangleCount++;		//增加三角形计数
+						face += checkChar;			//Add the char to our face string
+						checkChar = fileIn.get();	//Get the next Character
+						if(checkChar == ' ')		//If its a space...
+							triangleCount++;		//Increase our triangle count
 					}
 
-					//在面字符串结尾检测空格
+					//Check for space at the end of our face string
 					if(face[face.length()-1] == ' ')
-						triangleCount--;	//每个空格添加到三角形计数
+						triangleCount--;	//Each space adds to our triangle count
 
 					triangleCount -= 1;		//Ever vertex in the face AFTER the first two are new faces
 
@@ -2896,10 +2443,6 @@ bool InitScene()
     if(!LoadMD5Model(L"boy.md5mesh", NewMD5Model, meshSRV, textureNameArray))
 		return false;
 	///////////////**************new**************////////////////////
-	    ///////////////**************new**************////////////////////    
-    if(!LoadMD5Anim(L"boy.md5anim", NewMD5Model))
-        return false;
-
     // 获取包围体信息
    // CreateBoundingVolumes(bottleVertPosArray, bottleBoundingBoxVertPosArray, bottleBoundingBoxVertIndexArray, bottleBoundingSphere, bottleCenterOffset);
 	///////////////**************new**************////////////////////
@@ -3267,9 +2810,7 @@ void DrawScene()
 {
 	//将更新的颜色填充后缓冲
 //	D3DXCOLOR bgColor(red, green, blue, 1.0f);
-//	float bgColor[4] = { 0.1f, 0.1f, 0.1f, 1.0f };
-    float bgColor[4] = { 0.5f, 0.5f, 0.5f, 1.0f };
-
+	float bgColor[4] = { 0.1f, 0.1f, 0.1f, 1.0f };
 	d3d11DevCon->ClearRenderTargetView(renderTargetView, bgColor);
 
 	//刷新深度模板视图
