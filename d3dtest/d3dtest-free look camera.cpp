@@ -13,6 +13,7 @@
 ///////////////**************new**************////////////////////
 
 #include <windows.h>
+#include "Resource.h"
 #include <d3d11.h>
 #include <d3dx11.h>
 #include <d3dx10.h>
@@ -25,7 +26,6 @@
 ///////////////**************new**************////////////////////
 #include <dinput.h>
 ///////////////**************new**************////////////////////
-#include <vector>
 //全局描述符
 IDXGISwapChain* SwapChain;
 ID3D11Device* d3d11Device;
@@ -44,9 +44,9 @@ ID3D11Buffer* squareVertBuffer;
 ID3D11VertexShader* VS;
 ID3D11PixelShader* PS;
 ID3D11PixelShader* D2D_PS;
-ID3D10Blob* D2D_PS_Buffer;
 ID3D10Blob* VS_Buffer;
 ID3D10Blob* PS_Buffer;
+ID3D10Blob* D2D_PS_Buffer;
 ID3D11InputLayout* vertLayout;
 
 ///
@@ -81,8 +81,8 @@ LPCTSTR WndClassName = L"firstwindow";
 HWND hwnd = NULL;
 HRESULT hr;
 
-int Width  = 1920;
-int Height = 1200;
+const int Width = 800; //设置宽
+const int Height = 800; // 设置高
 
 ///////////////**************new**************////////////////////
 DIMOUSESTATE mouseLastState;
@@ -173,18 +173,7 @@ int messageloop();
 bool InitDirectInput(HINSTANCE hInstance);
 void DetectInput(double time);
 ///////////////**************new**************////////////////////
-/************************************New Stuff****************************************************/
-int NumFaces = 0;
-int NumVertices = 0;
 
-struct HeightMapInfo{        // 高度图结构体
-    int terrainWidth;        // 高度图宽度
-    int terrainHeight;        // 高度图高度（长度）
-    XMFLOAT3 *heightMap;    // 保存地形顶点位置的数组
-};
-
-bool HeightMapLoad(char* filename, HeightMapInfo &hminfo);
-/*************************************************************************************************/
 LRESULT CALLBACK WndProc(HWND hWnd,
 	UINT msg,
 	WPARAM wParam,
@@ -295,20 +284,20 @@ bool InitializeWindow(HINSTANCE hInstance,
 	int width, int height,
 	bool windowed)
 {
-    typedef struct _WNDCLASS {
-        UINT cbSize;
-        UINT style;
-        WNDPROC lpfnWndProc;
-        int cbClsExtra;
-        int cbWndExtra;
-        HANDLE hInstance;
-        HICON hIcon;
-        HCURSOR hCursor;
-        HBRUSH hbrBackground;
-        LPCTSTR lpszMenuName;
-        LPCTSTR lpszClassName;
-    } WNDCLASS;
-
+	/*typedef struct _WNDCLASS{
+		UINT cbSize;
+		UINT style;
+		WNDPROC lpfnWndProc;
+		int cbClsExtra;
+		int cbWndExtra;
+		HANDLE hInstance;
+		HICON hIcon;
+		HCURSOR hCursor;
+		HBRUSH hbrBackground;
+		LPCTSTR lpszMenuName;
+		LPCTSTR lpszClassName;
+	}WNDCLASS;
+	*/
 	WNDCLASSEX wc;
 	wc.cbSize = sizeof(WNDCLASSEX); //window类的大小
 	/********windows类风格
@@ -351,7 +340,7 @@ bool InitializeWindow(HINSTANCE hInstance,
 	*/
 	wc.hCursor = LoadCursor(NULL, IDC_ARROW);
 	//hbrBackground是一个刷子的句柄，可使得背景黑色。
-    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 2);
 	//附加到窗口的菜单名字，不需要的话设置为NULL
 	wc.lpszMenuName = NULL;
 	//对类进行命名
@@ -369,11 +358,13 @@ bool InitializeWindow(HINSTANCE hInstance,
 	hwnd = CreateWindowEx(
 		NULL, 
 		WndClassName, 
-		L"heightmap",
+		L"free look camera",
 		WS_OVERLAPPEDWINDOW, 
-        CW_USEDEFAULT, CW_USEDEFAULT,
-        width, height,
-        NULL,
+		CW_USEDEFAULT, 
+		CW_USEDEFAULT, 
+		width,
+		height, 
+		NULL,
 		NULL,
 		hInstance,
 		NULL
@@ -381,8 +372,7 @@ bool InitializeWindow(HINSTANCE hInstance,
 
 	if (!hwnd)
 	{
-        MessageBox(NULL, L"Error creating window",
-            L"Error", MB_OK | MB_ICONERROR);
+		MessageBox(NULL, L"Error registering class", L"Error", MB_OK | MB_ICONERROR);
 		return 1;
 	}
 
@@ -439,8 +429,8 @@ bool InitializeDirect3d11App(HINSTANCE hInstance)
 	//hr = D3D11C
 
 	//创建交换链
-    hr = D3D11CreateDeviceAndSwapChain(Adapter, D3D_DRIVER_TYPE_UNKNOWN, NULL, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
-        NULL, NULL,    D3D11_SDK_VERSION, &swapChainDesc, &SwapChain, &d3d11Device, NULL, &d3d11DevCon);
+	D3D11CreateDeviceAndSwapChain(Adapter, D3D_DRIVER_TYPE_UNKNOWN, NULL, D3D11_CREATE_DEVICE_BGRA_SUPPORT, 
+	NULL, NULL,	D3D11_SDK_VERSION, &swapChainDesc, &SwapChain, &d3d11Device, NULL, &d3d11DevCon);
 
 	//初始化D2D D3D10.1和DirectWrite
 	InitD2D_D3D101_DWrite(Adapter);
@@ -449,9 +439,12 @@ bool InitializeDirect3d11App(HINSTANCE hInstance)
 	Adapter->Release();
 
 	//创建后缓冲
-    hr = SwapChain->GetBuffer( 0, __uuidof( ID3D11Texture2D ), (void**)&BackBuffer11 );
-    hr = d3d11Device->CreateRenderTargetView( BackBuffer11, NULL, &renderTargetView );
+	ID3D11Texture2D* BackBuffer;
+	SwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&BackBuffer);
 
+	//创建渲染目标
+	d3d11Device->CreateRenderTargetView(BackBuffer, NULL, &renderTargetView);
+	BackBuffer->Release();
 
 	//创建深度模板缓冲
 	D3D11_TEXTURE2D_DESC depthStencilDesc;
@@ -549,79 +542,7 @@ bool InitD2D_D3D101_DWrite(IDXGIAdapter1 *Adapter)
 	return true;
 }
 
-/************************************New Stuff****************************************************/
-bool HeightMapLoad(char* filename, HeightMapInfo &hminfo)
-{
-    FILE *filePtr;                            // 指向文件的当前位置
-    BITMAPFILEHEADER bitmapFileHeader;        // 保存文件信息的结构体
-    BITMAPINFOHEADER bitmapInfoHeader;        // 保存图片信息的结构体
-    int imageSize, index;
-    unsigned char height;
-
-    // 打开文件
-    filePtr = fopen(filename,"rb");
-    if (filePtr == NULL)
-        return 0;
-
-    // 读取位图头部
-    fread(&bitmapFileHeader, sizeof(BITMAPFILEHEADER), 1,filePtr);
-
-    // 读取信息头部
-    fread(&bitmapInfoHeader, sizeof(BITMAPINFOHEADER), 1, filePtr);
-
-    // 获取图片宽度和高度（长度）
-    hminfo.terrainWidth = bitmapInfoHeader.biWidth;
-    hminfo.terrainHeight = bitmapInfoHeader.biHeight;
-
-    // 图片尺寸字节大小，3表示每个像素的RBG字节数
-    imageSize = hminfo.terrainWidth * hminfo.terrainHeight * 3;
-
-    // 初始化保存图片数据的数组
-    unsigned char* bitmapImage = new unsigned char[imageSize];
-
-    // 将文件指针设置为图片数据的起始位置
-    fseek(filePtr, bitmapFileHeader.bfOffBits, SEEK_SET);
-
-    // 在bitmapImage中保存图片数据
-    fread(bitmapImage, 1, imageSize, filePtr);
-
-    // 关闭文件
-    fclose(filePtr);
-
-    //初始化高度图heightMap数组(保存地形图顶点)
-    hminfo.heightMap = new XMFLOAT3[hminfo.terrainWidth * hminfo.terrainHeight];
-
-    // 使用灰度图，所以3个rgb值是一样的，但是只需要一个来表示高度
-    // 所以使用这个k来跳过接下来的图片数据中的两个分量 (读取R而跳过BG)
-    int k=0;
-
-    // 将height除以下面的heightFactor来淡化地形高度,否则地形会看起来
-    // 非常的高低不平
-    float heightFactor = 10.0f;
-
-    // 将图片数据读进heightMap数组中
-    for(int j=0; j< hminfo.terrainHeight; j++)
-    {
-        for(int i=0; i< hminfo.terrainWidth; i++)
-        {
-            height = bitmapImage[k];
-
-            index = ( hminfo.terrainHeight * j) + i;
-
-            hminfo.heightMap[index].x = (float)i;
-            hminfo.heightMap[index].y = (float)height / heightFactor;
-            hminfo.heightMap[index].z = (float)j;
-
-            k+=3;
-        }
-    }
-
-    delete [] bitmapImage;
-    bitmapImage = 0;
-
-    return true;
-}
-/*************************************************************************************************/
+///////////////**************new**************////////////////////
 bool InitDirectInput(HINSTANCE hInstance)
 {
     hr = DirectInput8Create(hInstance,
@@ -696,7 +617,7 @@ void DetectInput(double time)
     if(keyboardState[DIK_ESCAPE] & 0x80)
         PostMessage(hwnd, WM_DESTROY, 0, 0);
 
-	float speed = 25.0f * time;
+	float speed = 15.0f * time;
 
 	if(keyboardState[DIK_A] & 0x80)
 	{
@@ -759,11 +680,11 @@ void CleanUp()
 	//释放不裁剪对象
 //	noCull->Release();
 	//释放混合对象
-
+#if 1
 	Transparency->Release();
 	CCWcullMode->Release();
 	CWcullMode->Release();
-	
+#endif	
 	//释放线框
 	//WireFrame->Release();
 
@@ -772,7 +693,7 @@ void CleanUp()
 	keyedMutex10->Release();
 	D2DRenderTarget->Release();
 	Brush->Release();
-    BackBuffer11->Release();
+//	BackBuffer11->Release();
 	sharedTex11->Release();
 	DWriteFactory->Release();
     TextFormat->Release();
@@ -873,165 +794,46 @@ bool InitScene()
 	light.diffuse = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
 
 
-    /************************************New Stuff****************************************************/
-    HeightMapInfo hmInfo;
-    HeightMapLoad("heightmap.bmp", hmInfo);        // 导入heightmap并将它保存进hmInfo
+	//Create the vertex buffer
+	Vertex v[] =
+	{
+		// Bottom Face
+		Vertex(-1.0f, -1.0f, -1.0f, 100.0f, 100.0f, 0.0f, 1.0f, 0.0f),
+		Vertex( 1.0f, -1.0f, -1.0f,   0.0f, 100.0f, 0.0f, 1.0f, 0.0f),
+		Vertex( 1.0f, -1.0f,  1.0f,   0.0f,   0.0f, 0.0f, 1.0f, 0.0f),
+		Vertex(-1.0f, -1.0f,  1.0f, 100.0f,   0.0f, 0.0f, 1.0f, 0.0f),
+	};
 
-    int cols = hmInfo.terrainWidth;
-    int rows = hmInfo.terrainHeight;
+	DWORD indices[] = {
+		0,  1,  2,
+		0,  2,  3,
+	};
 
-    //创建网格
-    NumVertices = rows * cols;
-    NumFaces  = (rows-1)*(cols-1)*2;
-
-    std::vector<Vertex> v(NumVertices);
-
-    for(DWORD i = 0; i < rows; ++i)
-    {
-        for(DWORD j = 0; j < cols; ++j)
-        {
-            v[i*cols+j].pos = hmInfo.heightMap[i*cols+j];
-            v[i*cols+j].normal = XMFLOAT3(0.0f, 1.0f, 0.0f);
-        }
-    }
-
-    std::vector<DWORD> indices(NumFaces * 3);
-
-    int k = 0;
-    int texUIndex = 0;
-    int texVIndex = 0;
-    for(DWORD i = 0; i < rows-1; i++)
-    {
-        for(DWORD j = 0; j < cols-1; j++)
-        {
-            indices[k]   = i*cols+j;        // Bottom left of quad
-            v[i*cols+j].texCoord = XMFLOAT2(texUIndex + 0.0f, texVIndex + 1.0f);
-
-            indices[k+1] = i*cols+j+1;        // Bottom right of quad
-            v[i*cols+j+1].texCoord = XMFLOAT2(texUIndex + 1.0f, texVIndex + 1.0f);
-
-            indices[k+2] = (i+1)*cols+j;    // Top left of quad
-            v[(i+1)*cols+j].texCoord = XMFLOAT2(texUIndex + 0.0f, texVIndex + 0.0f);
-
-
-            indices[k+3] = (i+1)*cols+j;    // Top left of quad
-            v[(i+1)*cols+j].texCoord = XMFLOAT2(texUIndex + 0.0f, texVIndex + 0.0f);
-
-            indices[k+4] = i*cols+j+1;        // Bottom right of quad
-            v[i*cols+j+1].texCoord = XMFLOAT2(texUIndex + 1.0f, texVIndex + 1.0f);
-
-            indices[k+5] = (i+1)*cols+j+1;    // Top right of quad
-            v[(i+1)*cols+j+1].texCoord = XMFLOAT2(texUIndex + 1.0f, texVIndex + 0.0f);
-
-            k += 6; // next quad
-
-            texUIndex++;
-        }
-        texUIndex = 0;
-        texVIndex++;
-    }
-
-    //////////////////////计算法线///////////////////////////
-    //使用法线平均法为每个顶点计算法线
-    std::vector<XMFLOAT3> tempNormal;
-
-    //规范化和非规范化法线
-    XMFLOAT3 unnormalized = XMFLOAT3(0.0f, 0.0f, 0.0f);
-
-    //用于从顶点位置获取向量
-    float vecX, vecY, vecZ;
-
-    //三角形的两个边
-    XMVECTOR edge1 = XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);
-    XMVECTOR edge2 = XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);
-
-    //计算面法线
-    for(int i = 0; i < NumFaces; ++i)
-    {
-        //获取向量用于描述三角形的一个边(edge 0,2)
-        vecX = v[indices[(i*3)]].pos.x - v[indices[(i*3)+2]].pos.x;
-        vecY = v[indices[(i*3)]].pos.y - v[indices[(i*3)+2]].pos.y;
-        vecZ = v[indices[(i*3)]].pos.z - v[indices[(i*3)+2]].pos.z;        
-        edge1 = XMVectorSet(vecX, vecY, vecZ, 0.0f);    //创建第一个边
-
-        //获取向量用于描述三角形的另一个边(edge 2,1)
-        vecX = v[indices[(i*3)+2]].pos.x - v[indices[(i*3)+1]].pos.x;
-        vecY = v[indices[(i*3)+2]].pos.y - v[indices[(i*3)+1]].pos.y;
-        vecZ = v[indices[(i*3)+2]].pos.z - v[indices[(i*3)+1]].pos.z;        
-        edge2 = XMVectorSet(vecX, vecY, vecZ, 0.0f);    //创建第二个边
-
-        //叉乘两个边向量得到非规范化面法线
-        XMStoreFloat3(&unnormalized, XMVector3Cross(edge1, edge2));
-        tempNormal.push_back(unnormalized);            //保存非规范化法线(为法线平均法而做)
-    }
-
-    //计算顶点法线 (法线平均法)
-    XMVECTOR normalSum = XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);
-    int facesUsing = 0;
-    float tX;
-    float tY;
-    float tZ;
-
-    //遍历每个顶点
-    for(int i = 0; i < NumVertices; ++i)
-    {
-        //检测使用该顶点的三角形
-        for(int j = 0; j < NumFaces; ++j)
-        {
-            if(indices[j*3] == i ||
-                indices[(j*3)+1] == i ||
-                indices[(j*3)+2] == i)
-            {
-                tX = XMVectorGetX(normalSum) + tempNormal[j].x;
-                tY = XMVectorGetY(normalSum) + tempNormal[j].y;
-                tZ = XMVectorGetZ(normalSum) + tempNormal[j].z;
-
-                normalSum = XMVectorSet(tX, tY, tZ, 0.0f);    //若有面正在使用顶点,则将非规范化面法线添加到normalSum
-                facesUsing++;
-            }
-        }
-
-        //normalSum除以共享顶点的面数得到实际法线
-        normalSum = normalSum / facesUsing;
-
-        //规范化normalSum向量
-        normalSum = XMVector3Normalize(normalSum);
-
-        //将法线保存进当前顶点内
-        v[i].normal.x = XMVectorGetX(normalSum);
-        v[i].normal.y = XMVectorGetY(normalSum);
-        v[i].normal.z = XMVectorGetZ(normalSum);
-
-        //为下一个顶点清除normalSum和facesUsing
-        normalSum = XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);
-        facesUsing = 0;
-    }
-    /*************************************************************************************************/
 	D3D11_BUFFER_DESC indexBufferDesc;
 	ZeroMemory(&indexBufferDesc, sizeof(indexBufferDesc));
 
 	indexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
-    indexBufferDesc.ByteWidth = sizeof(DWORD) * NumFaces * 3;
+	indexBufferDesc.ByteWidth = sizeof(DWORD) * 12 * 3;
 	indexBufferDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
 	indexBufferDesc.CPUAccessFlags = 0;
 	indexBufferDesc.MiscFlags = 0;
 
 	D3D11_SUBRESOURCE_DATA iinitData;
-    iinitData.pSysMem = &indices[0];
+	iinitData.pSysMem = indices;
 	d3d11Device->CreateBuffer(&indexBufferDesc, &iinitData, &squareIndexBuffer);
 
 	D3D11_BUFFER_DESC vertexBufferDesc;
 	ZeroMemory(&vertexBufferDesc, sizeof(vertexBufferDesc));
 
 	vertexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
-    vertexBufferDesc.ByteWidth = sizeof( Vertex ) * NumVertices;
+	vertexBufferDesc.ByteWidth = sizeof(Vertex) * 24;
 	vertexBufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
 	vertexBufferDesc.CPUAccessFlags = 0;
 	vertexBufferDesc.MiscFlags = 0;
 
 	D3D11_SUBRESOURCE_DATA vertexBufferData;
 	ZeroMemory(&vertexBufferData, sizeof(vertexBufferData));
-    vertexBufferData.pSysMem = &v[0];
+	vertexBufferData.pSysMem = v;
 	hr = d3d11Device->CreateBuffer(&vertexBufferDesc, &vertexBufferData, &squareVertBuffer);
 
 	//设置顶点缓冲
@@ -1040,7 +842,7 @@ bool InitScene()
 //	d3d11DevCon->IASetVertexBuffers(0, 1, &squareVertBuffer, &stride, &offset);
 
 	//创建输入布局
-    hr = d3d11Device->CreateInputLayout( layout, numElements, VS_Buffer->GetBufferPointer(), 
+	d3d11Device->CreateInputLayout(layout, numElements, VS_Buffer->GetBufferPointer(),
 		VS_Buffer->GetBufferSize(), &vertLayout);
 
 	//设置输入布局
@@ -1082,7 +884,7 @@ bool InitScene()
 	cbbd.CPUAccessFlags = 0;
 	cbbd.MiscFlags = 0;
 
-    hr = d3d11Device->CreateBuffer(&cbbd, NULL, &cbPerFrameBuffer);
+	d3d11Device->CreateBuffer(&cbbd, NULL, &cbPerFrameBuffer);
 
 	//相机信息
 	//相机信息
@@ -1195,14 +997,15 @@ void UpdateScene(double time)
 	//Reset cube1World
 	groundWorld = XMMatrixIdentity();
 
-    //定义地形的世界空间矩阵
+	//Define cube1's world space matrix
 	///////////////**************new**************////////////////////
-    Scale = XMMatrixScaling( 10.0f, 10.0f, 10.0f );
-    Translation = XMMatrixTranslation( -100.0f, -100.0f, -100.0f );
-    /************************************New Stuff****************************************************/
+	Scale = XMMatrixScaling( 500.0f, 10.0f, 500.0f );
+	Translation = XMMatrixTranslation( 0.0f, 10.0f, 0.0f );
 
-    //使用转换设置地形的世界空间
-    groundWorld = Scale * Translation;
+	//Set cube1's world space using the transformations
+	groundWorld = Scale * Translation;
+	///////////////**************new**************////////////////////
+	cube2World = Rotation * Scale;
 }
 
 ///////////////**************new**************////////////////////
@@ -1338,7 +1141,7 @@ void DrawScene()
 	d3d11DevCon->PSSetSamplers( 0, 1, &CubesTexSamplerState );
 
 	d3d11DevCon->RSSetState(CCWcullMode);
-    d3d11DevCon->DrawIndexed( NumFaces * 3, 0, 0 );
+	d3d11DevCon->DrawIndexed( 6, 0, 0 );
 
 	RenderText(L"FPS: ", fps);
 
@@ -1359,14 +1162,6 @@ int messageloop(){
 		*UINT wMsgFilterMax 指定消息范围内最后一个要检测的消息的值
 		*UINT wRemoveMsg 指定消息的处理方式。若设置为PM_REMOVE，则在读取之后会被删除
 		*/
-		BOOL PeekMessageL( 
-            LPMSG lpMsg,
-            HWND hWnd,
-            UINT wMsgFilterMin,
-            UINT wMsgFilterMax,
-            UINT wRemoveMsg
-            );
-
 		if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
 		{
 			if (msg.message == WM_QUIT)
@@ -1415,23 +1210,35 @@ LRESULT CALLBACK WndProc(HWND hwnd,
 	WPARAM wParam,
 	LPARAM lParam)
 {
-	
 	// 这是事件检测消息的地方，若escape键被按下，会显示一个消息框，询问是否真的退出。若点击yes，则程序关闭。若不点击，则消息框关闭。若消息包含WM_DESTROY
 	// 则意味着窗口正在被销毁，返回0并且程序关闭
 	switch (msg)
 	{
 	case WM_KEYDOWN:
-        if( wParam == VK_ESCAPE ){
+		if (wParam == VK_ESCAPE)
+		{
+			if (MessageBox(0, L"Are you sure you want to exit?",
+				L"Really?", MB_YESNO | MB_ICONASTERISK) == IDYES)
+			{
 				DestroyWindow(hwnd);
 			}
 			return 0;
 
-    case WM_DESTROY:
-        PostQuitMessage(0);
-        return 0;
-    }
-    return DefWindowProc(hwnd,
-        msg,
-        wParam,
-        lParam);
+		}
+		break;
+
+	case WM_DESTROY:
+		PostQuitMessage(0);
+		return 0;
+		break;
+
+	default:
+		break;
+	}
+
+	//调用默认窗口过程函数
+	return DefWindowProc(hwnd,
+		msg,
+		wParam,
+		lParam);
 }
